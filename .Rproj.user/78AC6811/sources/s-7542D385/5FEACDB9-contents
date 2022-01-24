@@ -1,0 +1,18 @@
+library(ggplot2)
+library(plyr)
+# Code for reading in the dataset and/or processing the data
+activity = read.csv("activity.csv")
+activity$day = weekdays(as.Date(activity$date))
+activity$DateTime = as.POSIXct(activity$date, format="%Y-%m-%d")
+
+clean = activity[!is.na(activity$steps),]
+
+sumTable = aggregate(activity$steps ~ activity$date, FUN=sum, )
+colnames(sumTable) = c("Date", "Steps")
+
+# Histogram of the total number of steps taken each day
+hist(sumTable$Steps, breaks=5, xlab="Steps", main = "Total Steps per Day")
+
+# Mean and median number of steps taken each day
+as.integer(mean(sumTable$Steps))
+as.integer(median(sumTable$Steps))
