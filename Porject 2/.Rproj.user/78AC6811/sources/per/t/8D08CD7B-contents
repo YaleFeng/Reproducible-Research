@@ -1,0 +1,147 @@
+## Course Project
+
+## Load libraries and setup environment
+
+```{r}
+library(ggplot2)
+library(plyr)
+library(dplyr)
+```
+
+## Read Data
+```{r}
+StormData <- read.csv(bzfile("repdata_data_StormData.csv.bz2"),header = TRUE)
+```
+
+## Test the loading data
+```{r}
+dim(StormData)
+str(StormData)
+```
+
+## Cleaning the data
+Check the missing value at first, seems like there is no NA
+```{r}
+sum(is.na(StormData$FATALITIES))
+sum(is.na(StormData$INJURIES))
+sum(is.na(StormData$PROPDMG))
+sum(is.na(StormData$CROPDMG))
+sum(is.na(StormData$PROPDMGEXP))
+sum(is.na(StormData$CROPDMGEXP))
+```
+
+We can merge some types of events together (too much type)
+```{r}
+unique(StormData$EVTYPE)
+```
+
+create a new variable for the merged type
+```{r}
+StormData$EVENT <- "OTHER"
+StormData$EVENT[grep("HAIL", StormData$EVTYPE, ignore.case = TRUE)] <- "HAIL"
+StormData$EVENT[grep("HEAT", StormData$EVTYPE, ignore.case = TRUE)] <- "HEAT"
+StormData$EVENT[grep("FLOOD", StormData$EVTYPE, ignore.case = TRUE)] <- "FLOOD"
+StormData$EVENT[grep("WIND", StormData$EVTYPE, ignore.case = TRUE)] <- "WIND"
+StormData$EVENT[grep("STORM", StormData$EVTYPE, ignore.case = TRUE)] <- "STORM"
+StormData$EVENT[grep("SNOW", StormData$EVTYPE, ignore.case = TRUE)] <- "SNOW"
+StormData$EVENT[grep("TORNADO", StormData$EVTYPE, ignore.case = TRUE)] <- "TORNADO"
+StormData$EVENT[grep("WINTER", StormData$EVTYPE, ignore.case = TRUE)] <- "WINTER"
+StormData$EVENT[grep("RAIN", StormData$EVTYPE, ignore.case = TRUE)] <- "RAIN"
+# listing the transformed event types 
+sort(table(StormData$EVENT), decreasing = TRUE)
+```
+
+
+The last two variable do not have clean data
+```{r}
+unique(StormData$PROPDMGEXP)
+unique(StormData$CROPDMGEXP)
+```
+Consider the 'H' as hundred (10^2)
+'K' as thousand (10^3)
+'M' as million (10^6)
+'B' as billion (10^9)
+others means nothing (10^0)
+
+Assigning numeric values
+```{r}
+StormData$PROPDMGEXP <- toupper(StormData$PROPDMGEXP)
+StormData$PROPDMGEXP[StormData$PROPDMGEXP %in% c("", "+", "-", "?")] <- "0"
+StormData$PROPDMGEXP[StormData$PROPDMGEXP %in% c("B")] <- "9"
+StormData$PROPDMGEXP[StormData$PROPDMGEXP %in% c("M")] <- "6"
+StormData$PROPDMGEXP[StormData$PROPDMGEXP %in% c("K")] <- "3"
+StormData$PROPDMGEXP[StormData$PROPDMGEXP %in% c("H")] <- "2"
+
+StormData$CROPDMGEXP <- toupper(StormData$CROPDMGEXP)
+StormData$CROPDMGEXP[StormData$CROPDMGEXP %in% c("", "+", "-", "?")] <- "0"
+StormData$CROPDMGEXP[StormData$CROPDMGEXP %in% c("B")] <- "9"
+StormData$CROPDMGEXP[StormData$CROPDMGEXP %in% c("M")] <- "6"
+StormData$CROPDMGEXP[StormData$CROPDMGEXP %in% c("K")] <- "3"
+StormData$CROPDMGEXP[StormData$CROPDMGEXP %in% c("H")] <- "2"
+```
+
+Create final variable by using the fixed exponential value before
+```{r}
+StormData$PROPDMGTOTAL <- StormData$PROPDMG * (10 ^ as.numeric(StormData$PROPDMGEXP))
+StormData$CROPDMGTOTAL <- StormData$CROPDMG * (10 ^ as.numeric(StormData$CROPDMGEXP))
+StormData$DMGTOTAL <- StormData$PROPDMGTOTAL + StormData$CROPDMGTOTAL
+sort(table(StormData$PROPDMGTOTAL), decreasing = TRUE)[1:10]
+sort(table(StormData$CROPDMGTOTAL), decreasing = TRUE)[1:10]
+```
+
+## Analysis
+### Public Health
+```{r}
+sumDamage.fatalities.and.injuries <- ddply(StormData, .(EVENT), summarize, Total = sum(FATALITIES + INJURIES,  na.rm = TRUE))
+sumDamage.fatalities.and.injuries$type <- "fatalities and injuries"
+sumDamage.fatalities <- ddply(StormData, .(EVENT), summarize, Total = sum(FATALITIES,  na.rm = TRUE))
+sumDamage.fatalities$type <- "fatalities"
+sumDamage.injuries <- ddply(StormData, .(EVENT), summarize, Total = sum(INJURIES,  na.rm = TRUE))
+sumDamage.injuries$type <- "injuries"
+sumDamage.health <- rbind(sumDamage.fatalities, sumDamage.injuries)
+health.by.event <- join (sumDamage.fatalities, sumDamage.injuries, by="EVENT", type="inner")
+health.by.event
+```
+
+### Economic
+```{r}
+sumDamage.propdmg.and.cropdmg <- ddply(StormData, .(EVENT), summarize, Total = sum(PROPDMGTOTAL + CROPDMGTOTAL,  na.rm = TRUE))
+sumDamage.propdmg.and.cropdmg$type <- "property and crop damage"
+sumDamage.prop <- ddply(StormData, .(EVENT), summarize, Total = sum(PROPDMGTOTAL,  na.rm = TRUE))
+sumDamage.prop$type <- "property"
+sumDamage.crop <- ddply(StormData, .(EVENT), summarize, Total = sum(CROPDMGTOTAL,  na.rm = TRUE))
+sumDamage.crop$type <- "crop"
+sumDamage.economic  <- rbind(sumDamage.prop, sumDamage.crop)
+economic.by.event <- join (sumDamage.prop, sumDamage.crop, by="EVENT", type="inner")
+economic.by.event
+```
+
+## Result
+### Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+```{r}
+sumDamage.health$EVENT <- as.factor(sumDamage.health$EVENT)
+health.plot <- ggplot(sumDamage.health, aes(x = EVENT, y = Total, fill = type)) + geom_bar(stat = "identity") +
+  coord_flip() +
+  xlab("Event Type") + 
+  ylab("Total number of health impact") +
+  ggtitle("Weather event types impact on public health") +
+  theme(plot.title = element_text(hjust = 0.5))
+print(health.plot)  
+```
+The most harmful weather event for health (in number of total fatalites and injuries) is, by far, a tornado.  
+
+### Across the United States, which types of events have the greatest economic consequences?
+```{r}
+# # transform EVENT to factor variable for economic variables
+sumDamage.economic$EVENT <- as.factor(sumDamage.economic$EVENT)
+# plot PROPERTY damage and CROP damage by EVENT
+economic.plot <- ggplot(sumDamage.economic, aes(x = EVENT, y = Total, fill = type)) + geom_bar(stat = "identity") +
+  coord_flip() +
+  xlab("Event Type") + 
+  ylab("Total damage in dollars") +
+  ggtitle("Weather event types impact on property and crop damage") +
+  theme(plot.title = element_text(hjust = 0.5))
+print(economic.plot) 
+```
+
+The most devastating weather event with the greatest economic cosequences (to property and crops) is a flood.
